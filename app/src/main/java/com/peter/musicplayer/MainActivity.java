@@ -7,28 +7,38 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.content.pm.PackageManager;
+import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.ListView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
-import org.w3c.dom.Text;
-
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity
 {
+    private SeekBar seekBar;
+    private TextView songPosition, songDuration;
+
+    private int currentPosition = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        songPosition = findViewById(R.id.current_position);
+        songDuration = findViewById(R.id.song_duration);
     }
     //Defining the permissions we need.
     private static final String[] PERMISSIONS ={
@@ -73,6 +83,52 @@ public class MainActivity extends AppCompatActivity
     private boolean isMusicPlayerInit;
     private List<String> musicFilesList;
 
+    private void addMusicFilesFrom(String dirPath)
+    {
+        final File musicDir = new File(dirPath);
+        if (!musicDir.exists())
+        {
+            musicDir.mkdir();
+            return;
+        }
+        final File[] files = musicDir.listFiles();
+        for (File file: files)
+        {
+            final String path = file.getAbsolutePath();
+            if (path.endsWith(".mp3"))
+            {
+                musicFilesList.add(path);
+            }
+        }
+    }
+
+    private void fillMusicList()
+    {
+        musicFilesList.clear();
+        addMusicFilesFrom(String.valueOf(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)));
+        addMusicFilesFrom(String.valueOf(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)));
+    }
+    private MediaPlayer mediaPlayer;
+
+    private int playMusicFile(String path)
+    {
+        mediaPlayer = new MediaPlayer();
+
+        try
+        {
+           mediaPlayer.setDataSource(path);
+           mediaPlayer.prepare();
+           mediaPlayer.start();
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+        return mediaPlayer.getDuration();
+    }
+
+
+
     @Override
     protected void onResume()
     {
@@ -89,9 +145,82 @@ public class MainActivity extends AppCompatActivity
 
             final TextAdapter textAdapter = new TextAdapter();
             musicFilesList = new ArrayList<>();
+            fillMusicList();
+            textAdapter.setData(musicFilesList);
+            musicFiles.setAdapter(textAdapter);
+
+            seekBar = findViewById(R.id.seek_bar);
+
+            seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener()
+            {
+                int songProgress;
+
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int i, boolean b)
+                {
+                    songProgress = i;
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar)
+                {
+
+                }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar)
+                {
+                    mediaPlayer.seekTo(songProgress);
+                }
+            });
+
+            musicFiles.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+                @Override
+                public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                    final String musicFilePath = musicFilesList.get(i);
+                    final long mSongDuration = playMusicFile(musicFilePath);
+                    seekBar.setVisibility(View.VISIBLE);
+                    songPosition.setVisibility(View.VISIBLE);
+                    songDuration.setVisibility(View.VISIBLE);
+                    getDurationTimer(mSongDuration);
+                    getSeekBarStatus();
+
+                }
+            });
 
             isMusicPlayerInit = true;
         }
+    }
+    private void getDurationTimer(long mSongDuration)
+    {
+        final long minutes=(mSongDuration/1000)/60;
+        final int seconds= (int) ((mSongDuration/1000)%60);
+       songDuration.setText(minutes+ ":"+seconds);
+    }
+    private void getSeekBarStatus()
+    {
+        new Thread(new Runnable() {
+
+            @Override
+            public void run() {
+                // mp is your MediaPlayer
+                // progress is your ProgressBar
+                int total = mediaPlayer.getDuration();
+                seekBar.setMax(total);
+//                songDuration.setText(String.valueOf(total));
+                while (mediaPlayer != null && currentPosition < total) {
+                    try {
+                        Thread.sleep(1000);
+                        currentPosition = mediaPlayer.getCurrentPosition();
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                    seekBar.setProgress(currentPosition);
+
+                }
+            }
+        }).start();
+
     }
 
     class TextAdapter extends BaseAdapter
